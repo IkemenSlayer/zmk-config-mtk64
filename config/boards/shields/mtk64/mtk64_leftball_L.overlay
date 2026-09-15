@@ -15,6 +15,8 @@
 
 &trackball { 
     status = "okay";
+    invert-x;
+    invert-y;
 };
 
 &trackball_split { 
