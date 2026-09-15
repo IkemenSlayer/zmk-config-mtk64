@@ -35,6 +35,8 @@
 
 &trackball { 
     status = "okay";
+    invert-x;
+    invert-y;
 };
 
 &xiao_serial { status = "disabled"; };
