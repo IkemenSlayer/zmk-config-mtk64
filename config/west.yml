@@ -4,6 +4,8 @@ manifest:
       url-base: https://github.com/zmkfirmware
     - name: mentako-ya
       url-base: https://github.com/mentako-ya
+    - name: IkemenSlayer
+      url-base: https://github.com/IkemenSlayer
     - name: sekigon-gonnoc
       url-base: https://github.com/sekigon-gonnoc
     - name: badjeff
@@ -29,8 +31,8 @@ manifest:
       remote: caksoylar
       revision: main
     - name: zmk-dongle-display
-      remote: mentako-ya
-      revision: mtk64_rev4
+      remote: IkemenSlayer
+      revision: aea4537fd945859a8d86a4ea985713582cb1b6e8 # hide-trackball-xy
     - name: zmk-feature-split-esb
       remote: badjeff
       revision: main
