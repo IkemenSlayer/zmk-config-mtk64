@@ -1,5 +1,8 @@
 name: ESB SDC integration probe
 on:
+  push:
+    branches: [right_left_dongle_ble]
+    paths: [.github/workflows/dual-radio-probe.yml]
   workflow_dispatch:
     inputs:
       radio_patch:
