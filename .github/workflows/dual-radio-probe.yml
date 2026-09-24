@@ -1,0 +1,77 @@
+name: ESB SDC integration probe
+on:
+  workflow_dispatch:
+    inputs:
+      radio_patch:
+        description: Apply experimental MPSL RADIO ownership patch
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-22.04
+    container: zmkfirmware/zmk-build-arm:stable
+    strategy:
+      fail-fast: false
+      matrix:
+        display: [plain, oled]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize pinned workspace
+        run: |
+          mkdir -p /tmp/dual-work/config
+          cp -R config/* /tmp/dual-work/config/
+          cd /tmp/dual-work
+          west init -l config
+      - uses: actions/cache@v4
+        with:
+          path: |
+            /tmp/dual-work/modules
+            /tmp/dual-work/tools
+            /tmp/dual-work/zephyr
+            /tmp/dual-work/zmk
+            /tmp/dual-work/nrfxlib
+          key: dual-radio-${{ hashFiles('config/west.yml') }}
+      - name: Fetch dependencies
+        working-directory: /tmp/dual-work
+        run: |
+          west update --fetch-opt=--filter=tree:0
+          west zephyr-export
+          west manifest --freeze > frozen-west.yml
+      - name: Apply pinned experimental patches
+        env:
+          RADIO_PATCH: ${{ inputs.radio_patch }}
+        run: |
+          if [ "$RADIO_PATCH" = true ]; then
+            python3 scripts/apply-dual-probe.py /tmp/dual-work --radio
+          else
+            python3 scripts/apply-dual-probe.py /tmp/dual-work
+          fi
+      - name: Build with SoftDevice and timeslots
+        working-directory: /tmp/dual-work
+        env:
+          DISPLAY_KIND: ${{ matrix.display }}
+        run: |
+          shield="mtk64_DONGLE rgbled_adapter"
+          if [ "$DISPLAY_KIND" = oled ]; then shield="$shield dongle_display"; fi
+          west build -s zmk/app -d build -b xiao_ble//zmk -S studio-rpc-usb-uart -- \
+            -DZMK_CONFIG=/tmp/dual-work/config \
+            -DZMK_EXTRA_MODULES="$GITHUB_WORKSPACE" \
+            -DSHIELD="$shield" \
+            -DEXTRA_CONF_FILE=/tmp/dual-work/config/dual-probe.conf \
+            -DEXTRA_DTC_OVERLAY_FILE=/tmp/dual-work/config/dual-probe.overlay
+      - name: Verify actual generated configuration
+        if: always()
+        run: python3 scripts/check-dual-config.py /tmp/dual-work/build/zephyr/.config
+      - name: Save diagnostic evidence (no flashable firmware)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: radio-evidence-${{ matrix.display }}
+          include-hidden-files: true
+          path: |
+            /tmp/dual-work/frozen-west.yml
+            /tmp/dual-work/build/zephyr/.config
+            /tmp/dual-work/build/zephyr/zephyr.dts
+            /tmp/dual-work/build/zephyr/zmk.map

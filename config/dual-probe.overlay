@@ -1,0 +1,4 @@
+/* The board's existing chosen zephyr,bt-hci points at this node. */
+&bt_hci_controller {
+    compatible = "nordic,bt-hci-sdc";
+};
