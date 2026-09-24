@@ -1,0 +1,101 @@
+--- a/subsys/esb/esb.c
++++ b/subsys/esb/esb.c
+@@ -1273,8 +1273,12 @@
+ 
+ 	nrf_radio_packetptr_set(NRF_RADIO, pdu);
+ 
+-	NVIC_ClearPendingIRQ(ESB_RADIO_IRQ_NUMBER);
+-	irq_enable(ESB_RADIO_IRQ_NUMBER);
++	if (!IS_ENABLED(CONFIG_ESB_MPSL_RADIO)) {
++		NVIC_ClearPendingIRQ(ESB_RADIO_IRQ_NUMBER);
++	}
++	if (!IS_ENABLED(CONFIG_ESB_MPSL_RADIO)) {
++		irq_enable(ESB_RADIO_IRQ_NUMBER);
++	}
+ 
+ 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
+ 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_PAYLOAD);
+@@ -1832,7 +1836,9 @@
+ 
+ static void esb_irq_disable(void)
+ {
+-	irq_disable(ESB_RADIO_IRQ_NUMBER);
++	if (!IS_ENABLED(CONFIG_ESB_MPSL_RADIO)) {
++		irq_disable(ESB_RADIO_IRQ_NUMBER);
++	}
+ 	irq_disable(ESB_EVT_IRQ_NUMBER);
+ 	irq_disable(ESB_TIMER_IRQ);
+ }
+@@ -1899,15 +1905,19 @@
+ 	/* Ensure IRQs are disabled before attaching. */
+ 	esb_irq_disable();
+ 
++#if !defined(CONFIG_ESB_MPSL_RADIO)
+ 	ARM_IRQ_DIRECT_DYNAMIC_CONNECT(ESB_RADIO_IRQ_NUMBER, CONFIG_ESB_RADIO_IRQ_PRIORITY,
+ 				       0, reschedule);
++#endif
+ 	ARM_IRQ_DIRECT_DYNAMIC_CONNECT(ESB_EVT_IRQ_NUMBER, CONFIG_ESB_EVENT_IRQ_PRIORITY,
+ 				       0, reschedule);
+ 	ARM_IRQ_DIRECT_DYNAMIC_CONNECT(ESB_TIMER_IRQ, CONFIG_ESB_EVENT_IRQ_PRIORITY,
+ 				       0, reschedule);
+ 
++#if !defined(CONFIG_ESB_MPSL_RADIO)
+ 	irq_connect_dynamic(ESB_RADIO_IRQ_NUMBER, CONFIG_ESB_RADIO_IRQ_PRIORITY,
+ 			    radio_dynamic_irq_handler, NULL, 0);
++#endif
+ 	irq_connect_dynamic(ESB_EVT_IRQ_NUMBER, CONFIG_ESB_EVENT_IRQ_PRIORITY,
+ 			    evt_dynamic_irq_handler, NULL, 0);
+ 	irq_connect_dynamic(ESB_TIMER_IRQ, CONFIG_ESB_EVENT_IRQ_PRIORITY,
+@@ -1924,7 +1934,9 @@
+ 
+ #endif /* IS_ENABLED(CONFIG_ESB_DYNAMIC_INTERRUPTS) */
+ 
+-	irq_enable(ESB_RADIO_IRQ_NUMBER);
++	if (!IS_ENABLED(CONFIG_ESB_MPSL_RADIO)) {
++		irq_enable(ESB_RADIO_IRQ_NUMBER);
++	}
+ 	irq_enable(ESB_EVT_IRQ_NUMBER);
+ 	if (IS_ENABLED(ESB_EVT_USING_EGU)) {
+ 		nrf_egu_int_enable(ESB_EGU, ESB_EGU_EVT_INT);
+@@ -2221,8 +2233,12 @@
+ 	atomic_clear_bit(&esb_addr.rf_channel_flags, RF_CHANNEL_UPDATE_FLAG);
+ 	nrf_radio_packetptr_set(NRF_RADIO, rx_payload_buffer);
+ 
+-	NVIC_ClearPendingIRQ(ESB_RADIO_IRQ_NUMBER);
+-	irq_enable(ESB_RADIO_IRQ_NUMBER);
++	if (!IS_ENABLED(CONFIG_ESB_MPSL_RADIO)) {
++		NVIC_ClearPendingIRQ(ESB_RADIO_IRQ_NUMBER);
++	}
++	if (!IS_ENABLED(CONFIG_ESB_MPSL_RADIO)) {
++		irq_enable(ESB_RADIO_IRQ_NUMBER);
++	}
+ 
+ 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
+ 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_PAYLOAD);
+@@ -2532,3 +2548,13 @@
+ 	return 0;
+ }
+ void *__ptr__radio_dynamic_irq_handler = &radio_dynamic_irq_handler;
++
++#if defined(CONFIG_ESB_MPSL_RADIO)
++/* Invoked only by MPSL's RADIO signal while the ESB timeslot owns the radio.
++ * Do not run ISR_DIRECT_PM: this is a callback, not a Zephyr direct ISR.
++ */
++void esb_mpsl_radio_irq_handler(void)
++{
++    radio_irq_handler();
++}
++#endif
+--- a/subsys/esb/Kconfig
++++ b/subsys/esb/Kconfig
+@@ -177,3 +177,10 @@
+ source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+ 
+ endif # NRF_ENHANCED_SHOCKBURST
++
++config ESB_MPSL_RADIO
++    bool "Leave RADIO IRQ ownership with MPSL (experimental)"
++    depends on ESB && ESB_DYNAMIC_INTERRUPTS && BT_LL_SOFTDEVICE
++    help
++      The application must dispatch the MPSL RADIO signal to ESB, and may
++      access ESB radio hardware only during a granted timeslot.

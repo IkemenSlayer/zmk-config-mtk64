@@ -1,8 +1,5 @@
 name: ESB SDC integration probe
 on:
-  push:
-    branches: [right_left_dongle_ble]
-    paths: [.github/workflows/dual-radio-probe.yml]
   workflow_dispatch:
     inputs:
       radio_patch:
@@ -66,7 +63,14 @@ jobs:
             -DEXTRA_DTC_OVERLAY_FILE=/tmp/dual-work/config/dual-probe.overlay
       - name: Verify actual generated configuration
         if: always()
-        run: python3 scripts/check-dual-config.py /tmp/dual-work/build/zephyr/.config
+        env:
+          RADIO_PATCH: ${{ inputs.radio_patch }}
+        run: |
+          if [ "$RADIO_PATCH" = true ]; then
+            python3 scripts/check-dual-config.py /tmp/dual-work/build/zephyr/.config --radio
+          else
+            python3 scripts/check-dual-config.py /tmp/dual-work/build/zephyr/.config
+          fi
       - name: Save diagnostic evidence (no flashable firmware)
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,8 +1,12 @@
 """A successful build must not silently discard the requested radio configuration."""
-import sys
+import argparse
 from pathlib import Path
 
-config = dict(line.split("=", 1) for line in Path(sys.argv[1]).read_text().splitlines()
+parser = argparse.ArgumentParser()
+parser.add_argument("config", type=Path)
+parser.add_argument("--radio", action="store_true")
+args = parser.parse_args()
+config = dict(line.split("=", 1) for line in args.config.read_text().splitlines()
               if line.startswith("CONFIG_") and "=" in line)
 expected = {
     "ZMK_BLE": "y", "ZMK_SPLIT_ESB": "y", "ZMK_SPLIT_BLE": "n",
@@ -14,6 +18,8 @@ expected = {
     "ZMK_STUDIO": "y", "ZMK_USB": "y",
 }
 errors = []
+if args.radio:
+    expected["ESB_MPSL_RADIO"] = "y"
 for name, value in expected.items():
     actual = config.get("CONFIG_" + name, "n")
     print(f"{name}: {actual} (required {value})")

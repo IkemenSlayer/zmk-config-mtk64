@@ -1,0 +1,39 @@
+--- a/src/split/esb/app_esb.c
++++ b/src/split/esb/app_esb.c
+@@ -325,7 +325,9 @@
+         return err;
+     }
+ 
++#if !IS_ENABLED(CONFIG_ESB_MPSL_RADIO)
+     NVIC_SetPriority(RADIO_IRQn, 0);
++#endif
+ 
+     if (mode == APP_ESB_MODE_PRX) {
+         esb_start_rx();
+--- a/src/split/esb/timeslot.c
++++ b/src/split/esb/timeslot.c
+@@ -34,8 +34,8 @@
+ static volatile bool m_in_timeslot = false;
+ 
+ // Declare the RADIO IRQ handler to supress warning
+-extern void *__ptr__radio_dynamic_irq_handler;
+-typedef void (*radio_irq_handler_t)(const void *args);
++extern void esb_mpsl_radio_irq_handler(void);
++BUILD_ASSERT(IS_ENABLED(CONFIG_ESB_MPSL_RADIO), "MPSL must own RADIO IRQ");
+ 
+ // Requests and callbacks to be run serialized from an SWI interrupt
+ enum mpsl_timeslot_call {
+@@ -187,11 +187,10 @@
+ 
+             // We have to manually call the RADIO IRQ handler when the RADIO signal occurs
+             if(m_in_timeslot) {
+-                radio_irq_handler_t radio_irq_handler = (radio_irq_handler_t)__ptr__radio_dynamic_irq_handler;
+-                radio_irq_handler(NULL);
++                esb_mpsl_radio_irq_handler();
+             } else {
+                 NVIC_ClearPendingIRQ(RADIO_IRQn);
+-                NVIC_DisableIRQ(RADIO_IRQn);
++                /* MPSL owns the IRQ; ESB must not disable it. */
+             }
+             break;
+ 
