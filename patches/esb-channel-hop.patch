@@ -1,0 +1,11 @@
+--- a/src/split/esb/app_esb.c
++++ b/src/split/esb/app_esb.c
+@@ -62,7 +62,7 @@
+ static uint8_t esb_rf_ch_idx;
+ 
+ uint8_t esb_rf_ch_hop() {
+-    esb_rf_ch_idx = ++esb_rf_ch_idx % ARRAY_SIZE(esb_rf_ch);
++    esb_rf_ch_idx = (esb_rf_ch_idx + 1U) % ARRAY_SIZE(esb_rf_ch);
+     LOG_DBG("rf ch: %d", esb_rf_ch[esb_rf_ch_idx]);
+     esb_set_rf_channel(esb_rf_ch[esb_rf_ch_idx]);
+     return esb_rf_ch[esb_rf_ch_idx];

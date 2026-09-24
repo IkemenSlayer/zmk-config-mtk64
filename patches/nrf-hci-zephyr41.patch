@@ -1,0 +1,28 @@
+--- a/subsys/bluetooth/hci_vs_sdc.c
++++ b/subsys/bluetooth/hci_vs_sdc.c
+@@ -28,7 +28,11 @@
+ {
+ 	struct net_buf *buf;
+ 
+-	buf = bt_hci_cmd_alloc(K_FOREVER);
++	if (params_size > UINT8_MAX) {
++		return -EMSGSIZE;
++	}
++
++	buf = bt_hci_cmd_create(opcode, (uint8_t)params_size);
+ 	if (!buf) {
+ 		return -ENOMEM;
+ 	}
+@@ -45,7 +49,11 @@
+ 	struct net_buf *buf;
+ 	struct net_buf *rsp_buf;
+ 
+-	buf = bt_hci_cmd_alloc(K_FOREVER);
++	if (params_size > UINT8_MAX) {
++		return -EMSGSIZE;
++	}
++
++	buf = bt_hci_cmd_create(opcode, (uint8_t)params_size);
+ 	if (!buf) {
+ 		return -ENOMEM;
+ 	}

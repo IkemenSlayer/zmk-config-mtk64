@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       radio_patch:
-        description: Apply experimental MPSL RADIO ownership patch
+        description: Apply experimental MPSL RADIO and Zephyr 4.1 compatibility patches
         type: boolean
         default: false
 permissions:
@@ -59,6 +59,7 @@ jobs:
             -DZMK_CONFIG=/tmp/dual-work/config \
             -DZMK_EXTRA_MODULES="$GITHUB_WORKSPACE" \
             -DSHIELD="$shield" \
+            '-DEXTRA_CFLAGS=-Werror=implicit-function-declaration -Werror=int-conversion -Werror=sequence-point' \
             -DEXTRA_CONF_FILE=/tmp/dual-work/config/dual-probe.conf \
             -DEXTRA_DTC_OVERLAY_FILE=/tmp/dual-work/config/dual-probe.overlay
       - name: Verify actual generated configuration

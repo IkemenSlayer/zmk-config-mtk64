@@ -22,5 +22,7 @@ apply("zmk-feature-split-esb", "314c7cbaf4a74e1add1d6ffc8249de3e29965b8c", "esb-
 if args.radio:
     apply("nrf", "9b3d2623fdcd9c0fd0284f860beea924568c9826", "nrf-esb-radio-owner.patch")
     apply("zmk-feature-split-esb", "314c7cbaf4a74e1add1d6ffc8249de3e29965b8c", "esb-timeslot-radio.patch")
+    apply("nrf", "9b3d2623fdcd9c0fd0284f860beea924568c9826", "nrf-hci-zephyr41.patch")
+    apply("zmk-feature-split-esb", "314c7cbaf4a74e1add1d6ffc8249de3e29965b8c", "esb-channel-hop.patch")
     with (root / "config/dual-probe.conf").open("a") as config:
         config.write("\nCONFIG_ESB_MPSL_RADIO=y\n")
