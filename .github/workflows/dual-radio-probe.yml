@@ -19,6 +19,7 @@ jobs:
           git -C /tmp/esb-host checkout 314c7cbaf4a74e1add1d6ffc8249de3e29965b8c
           git -C /tmp/esb-host apply "$GITHUB_WORKSPACE/patches/esb-timeslot-radio.patch"
           git -C /tmp/esb-host apply "$GITHUB_WORKSPACE/patches/esb-timeslot-timing.patch"
+          git -C /tmp/esb-host apply "$GITHUB_WORKSPACE/patches/esb-timeslot-session.patch"
           set -o pipefail
           python3 scripts/test-timeslot-host.py /tmp/esb-host | tee host-tests.txt
       - uses: actions/upload-artifact@v4

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <setjmp.h>
+#include <stdatomic.h>
 #define IS_ENABLED(x) (x)
 #define CONFIG_MPSL_ASSERT_HANDLER 0
 #define CONFIG_ESB_MPSL_RADIO 1
@@ -26,6 +27,7 @@
 #define K_FOREVER (-1)
 #define NRF_EFAULT 14
 #define NRF_EAGAIN 11
+#define NRF_ENOENT 2
 typedef enum { APP_TS_STARTED, APP_TS_STOPPED } zmk_split_esb_timeslot_callback_type_t;
 typedef void (*zmk_split_esb_timeslot_callback_t)(zmk_split_esb_timeslot_callback_type_t);
 typedef uint8_t mpsl_timeslot_session_id_t;
@@ -82,7 +84,8 @@ void esb_mpsl_radio_irq_handler(void) { radio_calls++; }
 static void mock_raw_radio(const void *p) { (void)p; radio_calls++; }
 void *__ptr__radio_dynamic_irq_handler = (void *)mock_raw_radio;
 static int queue[512], head, tail, worker_budget;
-static int open_error, requested_id = -1, close_count;
+static int open_error, requested_id = -1, close_count, open_count, request_count;
+static int request_error, close_error;
 static jmp_buf worker_exit;
 static int k_msgq_put(int *q, const void *item, int timeout) {
     (void)q; (void)timeout;
@@ -99,11 +102,12 @@ static int k_msgq_get(int *q, void *item, int timeout) {
 static void k_sleep(int t) { (void)t; }
 static int mpsl_timeslot_session_open(mpsl_timeslot_callback_t cb, uint8_t *id) {
     (void)cb;
+    open_count++;
     if (open_error) return open_error;
     *id = 3;
     return 0;
 }
 static int mpsl_timeslot_request(uint8_t id, const mpsl_timeslot_request_t *p) {
-    (void)p; requested_id = id; return 0;
+    (void)p; requested_id = id; request_count++; return request_error;
 }
-static int mpsl_timeslot_session_close(uint8_t id) { (void)id; close_count++; return 0; }
+static int mpsl_timeslot_session_close(uint8_t id) { (void)id; close_count++; return close_error; }

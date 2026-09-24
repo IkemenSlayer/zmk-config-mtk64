@@ -21,23 +21,26 @@ original = subprocess.check_output(['git', '-C', str(args.esb), 'show', f'HEAD:{
 current = (args.esb / rel).read_text()
 stubs = (root / 'tests/timeslot_host_stubs.h').read_text()
 cases = (root / 'tests/timeslot_host_cases.c').read_text()
-fixes = ['late_start', 'close_timer', 'close_extend', 'no_event']
+fixes = ['late_start', 'close_timer', 'close_extend', 'no_event', 'open_failure', 'close_idle']
 regressions = ['extend_success', 'extend_failure']
-known = ['open_failure_reproduced', 'close_idle_reproduced']
+session_cases = ['reopen_waits', 'busy_request', 'missing_session', 'close_retry',
+                 'close_already_closed', 'coalesced_requests']
 with tempfile.TemporaryDirectory() as temp:
     for label, source in [('upstream', original), ('patched', current)]:
         # Only replace includes with mocks; execute the dependency implementation.
         source = re.sub(r'^#include[^\n]*', '', source, flags=re.M)
         file = Path(temp) / f'{label}.c'
         exe = Path(temp) / label
-        file.write_text(stubs + '\n' + source + '\n' + cases)
+        define = '#define SESSION_LIFECYCLE_PROBE 1\n' if label == 'patched' else ''
+        file.write_text(define + stubs + '\n' + source + '\n' + cases)
         command = ['gcc', '-std=c11', '-O2', '-Wall', '-Werror=implicit-function-declaration',
                    '-Werror=int-conversion', str(file), '-o', str(exe)]
         subprocess.run(command, check=True, capture_output=True, text=True)
-        for case in fixes + regressions + known:
+        for case in fixes + regressions + (session_cases if label == 'patched' else []):
             result = subprocess.run([str(exe), case], capture_output=True, text=True)
             if label == 'upstream' and case in fixes:
-                assert result.returncode != 0 and 'Assertion' in result.stderr and 'signal_action' in result.stderr, (case, result)
+                expected = 'requested_id' if case in ['open_failure', 'close_idle'] else 'signal_action'
+                assert result.returncode != 0 and 'Assertion' in result.stderr and expected in result.stderr, (case, result)
                 print(f'CONFIRMED upstream failure: {case}', flush=True)
             else:
                 assert result.returncode == 0, (label, case, result.stdout, result.stderr)

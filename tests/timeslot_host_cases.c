@@ -8,13 +8,21 @@ static int signal_action(uint32_t signal) {
 }
 static void start_slot(void) {
     zmk_split_esb_timeslot_init(notify);
+#ifdef SESSION_LIFECYCLE_PROBE
+    zmk_split_esb_timeslot_open_session();
+    service_session();
+#endif
     m_sess_open = true;
     assert(signal_action(MPSL_TIMESLOT_SIGNAL_START) == MPSL_TIMESLOT_SIGNAL_ACTION_NONE);
     assert(started == 1 && enabled == 3);
 }
 static void work_steps(int count) {
+#ifdef SESSION_LIFECYCLE_PROBE
+    while (count--) service_session();
+#else
     worker_budget = count;
     if (setjmp(worker_exit) == 0) mpsl_nonpreemptible_thread();
+#endif
 }
 int main(int argc, char **argv) {
     assert(argc == 2);
@@ -24,18 +32,85 @@ int main(int argc, char **argv) {
         m_sess_open = false;
         assert(signal_action(MPSL_TIMESLOT_SIGNAL_START) == MPSL_TIMESLOT_SIGNAL_ACTION_END);
         assert(started == 0 && enabled == 0);
-    } else if (!strcmp(test, "open_failure_reproduced")) {
+    } else if (!strcmp(test, "open_failure")) {
         open_error = -12;
         zmk_split_esb_timeslot_open_session();
         work_steps(2);
-        assert(requested_id == 255); /* Known unfixed bug, not a success criterion. */
-        puts("KNOWN DEFECT: open failure still requests with invalid session ID 255");
-    } else if (!strcmp(test, "close_idle_reproduced")) {
-        m_sess_open = true;
+        assert(requested_id == -1);
+#ifdef SESSION_LIFECYCLE_PROBE
+        assert(!m_sess_open && session_state == SESSION_CLOSED);
+        open_error = 0;
+        work_steps(1);
+        assert(requested_id == 3 && m_sess_open);
+#endif
+    } else if (!strcmp(test, "close_idle")) {
+        zmk_split_esb_timeslot_open_session();
+        work_steps(2);
+        requested_id = -1;
         zmk_split_esb_timeslot_close_session();
         signal_action(MPSL_TIMESLOT_SIGNAL_SESSION_IDLE);
-        assert(tail == 2 && queue[0] == REQ_CLOSE_SESSION && queue[1] == REQ_MAKE_REQUEST);
-        puts("KNOWN DEFECT: IDLE queues a request behind CLOSE");
+        work_steps(2);
+        assert(requested_id == -1);
+#ifdef SESSION_LIFECYCLE_PROBE
+    } else if (!strcmp(test, "reopen_waits")) {
+        start_slot();
+        zmk_split_esb_timeslot_close_session();
+        work_steps(1);
+        zmk_split_esb_timeslot_open_session();
+        work_steps(3);
+        assert(open_count == 1 && close_count == 1 && request_count == 1);
+        assert(signal_action(MPSL_TIMESLOT_SIGNAL_TIMER0) == MPSL_TIMESLOT_SIGNAL_ACTION_END);
+        signal_action(MPSL_TIMESLOT_SIGNAL_SESSION_CLOSED);
+        work_steps(1);
+        assert(open_count == 2 && request_count == 2 && m_sess_open);
+    } else if (!strcmp(test, "busy_request")) {
+        request_error = -NRF_EAGAIN;
+        zmk_split_esb_timeslot_open_session();
+        work_steps(5);
+        assert(open_count == 1 && close_count == 0 && request_count == 1);
+        request_error = 0;
+        signal_action(MPSL_TIMESLOT_SIGNAL_SESSION_IDLE);
+        work_steps(1);
+        assert(request_count == 2 && close_count == 0);
+    } else if (!strcmp(test, "missing_session")) {
+        request_error = -NRF_ENOENT;
+        zmk_split_esb_timeslot_open_session();
+        work_steps(1);
+        assert(!m_sess_open && request_count == 1);
+        request_error = 0;
+        work_steps(1);
+        assert(open_count == 2 && requested_id == 3 && request_count == 2);
+    } else if (!strcmp(test, "close_retry")) {
+        start_slot();
+        close_error = -99;
+        zmk_split_esb_timeslot_close_session();
+        work_steps(2);
+        assert(close_count == 2 && !m_sess_open && open_count == 1);
+        close_error = 0;
+        work_steps(2);
+        assert(close_count == 3 && session_state == SESSION_CLOSING);
+        signal_action(MPSL_TIMESLOT_SIGNAL_SESSION_CLOSED);
+        work_steps(1);
+        assert(session_state == SESSION_CLOSED && open_count == 1);
+    } else if (!strcmp(test, "close_already_closed")) {
+        start_slot();
+        close_error = -NRF_EAGAIN;
+        zmk_split_esb_timeslot_close_session();
+        work_steps(2);
+        assert(session_state == SESSION_CLOSED && close_count == 1);
+    } else if (!strcmp(test, "coalesced_requests")) {
+        for (int i = 0; i < 1000; i++) {
+            zmk_split_esb_timeslot_open_session();
+            zmk_split_esb_timeslot_close_session();
+        }
+        work_steps(1);
+        assert(open_count == 0 && request_count == 0);
+        zmk_split_esb_timeslot_open_session();
+        work_steps(1);
+        for (int i = 0; i < 1000; i++) signal_action(MPSL_TIMESLOT_SIGNAL_SESSION_IDLE);
+        work_steps(1);
+        assert(open_count == 1 && request_count == 2);
+#endif
     } else {
         start_slot();
         if (!strcmp(test, "close_timer")) {

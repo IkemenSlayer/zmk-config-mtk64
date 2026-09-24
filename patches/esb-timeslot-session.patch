@@ -1,0 +1,271 @@
+--- a/src/split/esb/timeslot.c
++++ b/src/split/esb/timeslot.c
+@@ -5,6 +5,7 @@
+  */
+ 
+ #include <zephyr/kernel.h>
++#include <stdatomic.h>
+ #include "timeslot.h"
+ #include <zephyr/irq.h>
+ #include <zephyr/sys/ring_buffer.h>
+@@ -46,12 +47,22 @@
+ extern void esb_mpsl_radio_irq_handler(void);
+ BUILD_ASSERT(IS_ENABLED(CONFIG_ESB_MPSL_RADIO), "MPSL must own RADIO IRQ");
+ 
+-// Requests and callbacks to be run serialized from an SWI interrupt
+-enum mpsl_timeslot_call {
+-    REQ_OPEN_SESSION,
+-    REQ_MAKE_REQUEST,
+-    REQ_CLOSE_SESSION
+-};
++/* Desired state is independent of confirmed MPSL session state.
++ * Lock-free atomics are safe to read from the high-priority callback; no
++ * Zephyr queue, semaphore, or scheduler API is used to hand off these flags.
++ */
++BUILD_ASSERT(ATOMIC_BOOL_LOCK_FREE == 2, "timeslot flags must be lock-free");
++static atomic_bool session_wanted;
++static atomic_bool session_idle;
++static atomic_bool session_closed;
++enum session_state { SESSION_CLOSED, SESSION_OPEN, SESSION_CLOSING };
++static enum session_state session_state;
++static mpsl_timeslot_session_id_t session_id = 0xFFu;
++static bool close_issued;
++
++static bool session_running(void) {
++    return m_sess_open && atomic_load(&session_wanted);
++}
+ 
+ // Timeslot request
+ static mpsl_timeslot_request_t timeslot_request_earliest = {
+@@ -63,25 +74,6 @@
+ };
+ 
+ static mpsl_timeslot_signal_return_param_t signal_callback_return_param;
+-
+-// Message queue for requesting MPSL API calls to non-preemptible thread
+-K_MSGQ_DEFINE(mpsl_api_msgq, sizeof(enum mpsl_timeslot_call), 256, 4);
+-
+-static void schedule_request(enum mpsl_timeslot_call call) {
+-    int err;
+-    if (call == REQ_OPEN_SESSION) {
+-        m_sess_open = true;
+-    }
+-    else if (call == REQ_CLOSE_SESSION) {
+-        m_sess_open = false;
+-    }
+-    enum mpsl_timeslot_call api_call = call;
+-    err = k_msgq_put(&mpsl_api_msgq, &api_call, K_MSEC(1));
+-    if (err) {
+-        LOG_ERR("Message sent error: %d", err);
+-        // k_oops();
+-    }
+-}
+ 
+ static void set_timeslot_active_status(bool active) {
+     if (active) {
+@@ -123,7 +115,7 @@
+             signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+             p_ret_val = &signal_callback_return_param;
+ 
+-            if (!m_sess_open) {
++            if (!session_running()) {
+                 end_current_timeslot();
+                 break;
+             }
+@@ -148,7 +140,7 @@
+ 
+         case MPSL_TIMESLOT_SIGNAL_TIMER0:
+             // LOG_DBG("Signal TIMER0");
+-            if (!m_sess_open) {
++            if (!session_running()) {
+                 end_current_timeslot();
+                 p_ret_val = &signal_callback_return_param;
+                 break;
+@@ -177,7 +169,7 @@
+ 
+         case MPSL_TIMESLOT_SIGNAL_EXTEND_SUCCEEDED:
+             // LOG_DBG("Extend Succeeded");
+-            if (!m_sess_open) {
++            if (!session_running()) {
+                 end_current_timeslot();
+                 p_ret_val = &signal_callback_return_param;
+                 break;
+@@ -236,7 +228,7 @@
+             
+             // In this case returning SIGNAL_ACTION_REQUEST causes hardfault. 
+             // We have to request a new timeslot instead, from thread context. 
+-            schedule_request(REQ_MAKE_REQUEST);
++            atomic_store(&session_idle, true);
+             break;
+ 
+         case MPSL_TIMESLOT_SIGNAL_BLOCKED:
+@@ -246,7 +238,7 @@
+             set_timeslot_active_status(false);
+ 
+             // Request a new timeslot in this case
+-            schedule_request(REQ_MAKE_REQUEST);
++            atomic_store(&session_idle, true);
+             break;
+ 
+         case MPSL_TIMESLOT_SIGNAL_INVALID_RETURN:
+@@ -260,7 +252,7 @@
+             LOG_DBG("idle");
+ 
+             // Request a new timeslot in this case
+-            schedule_request(REQ_MAKE_REQUEST);
++            atomic_store(&session_idle, true);
+ 
+             signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+             p_ret_val = &signal_callback_return_param;
+@@ -269,6 +261,7 @@
+ 
+         case MPSL_TIMESLOT_SIGNAL_SESSION_CLOSED:
+             LOG_DBG("Session closed");
++            atomic_store(&session_closed, true);
+ 
+             signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+             p_ret_val = &signal_callback_return_param;
+@@ -284,7 +277,7 @@
+             set_timeslot_active_status(false);
+             
+             // queue a recovery request to try again fresh later
+-            schedule_request(REQ_MAKE_REQUEST);
++            atomic_store(&session_idle, true);
+ 
+             break;
+     }
+@@ -292,69 +285,81 @@
+     return p_ret_val;
+ }
+ 
+-/* To ensure thread safe operation, call all MPSL APIs from a non-preemptible
+- * thread.
++/* Only this cooperative worker invokes session APIs. Notifications coalesce
++ * instead of filling a queue. A missed wakeup is impossible: each 10 ms poll
++ * rechecks desired state. No new open is allowed before SESSION_CLOSED.
+  */
++static void service_session(void) {
++    int err;
++    if (atomic_exchange(&session_closed, false)) {
++        session_state = SESSION_CLOSED;
++        session_id = 0xFFu;
++        m_sess_open = false;
++        close_issued = false;
++        atomic_store(&session_idle, false);
++    }
++
++    if (session_state == SESSION_CLOSED) {
++        if (!atomic_load(&session_wanted)) {
++            return;
++        }
++        err = mpsl_timeslot_session_open(mpsl_timeslot_callback, &session_id);
++        if (err) {
++            /* Leave state CLOSED: never submit a request with an invalid ID. */
++            return;
++        }
++        session_state = SESSION_OPEN;
++        m_sess_open = true;
++        atomic_store(&session_idle, true);
++    }
++
++    if (session_state == SESSION_OPEN && !atomic_load(&session_wanted)) {
++        session_state = SESSION_CLOSING;
++        m_sess_open = false;
++        close_issued = false;
++    }
++    if (session_state == SESSION_CLOSING) {
++        if (!close_issued) {
++            err = mpsl_timeslot_session_close(session_id);
++            if (err == 0) {
++                close_issued = true;
++            } else if (err == -NRF_EAGAIN) {
++                /* close: EAGAIN means already closed, not a pending close. */
++                atomic_store(&session_closed, true);
++            }
++            /* Other errors retain CLOSING and retry on the next poll. */
++        }
++        return;
++    }
++
++    if (atomic_load(&session_wanted) && atomic_exchange(&session_idle, false)) {
++        err = mpsl_timeslot_request(session_id, &timeslot_request_earliest);
++        if (err == -NRF_ENOENT) {
++            /* request: ENOENT means no session. Reopen on the next poll. */
++            atomic_store(&session_closed, true);
++            m_sess_open = false;
++        } else if (err && err != -NRF_EAGAIN) {
++            atomic_store(&session_idle, true);
++        }
++        /* request: EAGAIN means busy; await an IDLE/BLOCKED/CANCELLED signal.
++         * Closing and reopening here can race a valid active timeslot.
++         */
++    }
++}
++
+ static void mpsl_nonpreemptible_thread(void) {
+-    int err;
+-    enum mpsl_timeslot_call api_call = 0;
+-
+-    /* Initialize to invalid session id */
+-    mpsl_timeslot_session_id_t session_id = 0xFFu;
+-
+     while (1) {
+-        if (k_msgq_get(&mpsl_api_msgq, &api_call, K_FOREVER) == 0) {
+-            //NRF_P0->OUTSET = BIT(29);
+-            switch (api_call) {
+-                case REQ_OPEN_SESSION:
+-                    LOG_DBG("req open");
+-                    err = mpsl_timeslot_session_open(mpsl_timeslot_callback, &session_id);
+-                    if (err) {
+-                        LOG_WRN("Timeslot open failed (%d), retrying in 50ms...", err);
+-                        k_sleep(K_MSEC(50));
+-                        schedule_request(REQ_OPEN_SESSION); // Put back in queue to try again
+-                    }
+-                    break;
+-                case REQ_MAKE_REQUEST:
+-                    LOG_DBG("req request");
+-                    err = mpsl_timeslot_request(session_id, &timeslot_request_earliest);
+-                    if (err) {
+-                        LOG_WRN("Timeslot request rejected (%d). Radio busy, backing off...", err);
+-                        // If the session ID became invalid, force a clean restart cycle
+-                        if (err == -NRF_EFAULT || err == -NRF_EAGAIN) {
+-                            mpsl_timeslot_session_close(session_id);
+-                            schedule_request(REQ_OPEN_SESSION);
+-                        } else {
+-                            k_sleep(K_MSEC(10)); // Back off 10ms before trying to ask again
+-                            schedule_request(REQ_MAKE_REQUEST);
+-                        }
+-                    }
+-                    break;
+-                case REQ_CLOSE_SESSION:
+-                    LOG_DBG("req close");
+-                    err = mpsl_timeslot_session_close(session_id);
+-                    if (err) {
+-                        LOG_WRN("Timeslot close warning: %d. Forcing session reset.", err);
+-                        session_id = 0xFFu; // Force clear the local tracker anyway
+-                        m_sess_open = false;
+-                    }
+-                    break;
+-                default:
+-                    LOG_WRN("Invalid background thread API call skipped.");
+-                    break;
+-            }
+-            //NRF_P0->OUTCLR = BIT(29);
+-        }
++        service_session();
++        k_sleep(K_MSEC(10));
+     }
+ }
+ 
+ void zmk_split_esb_timeslot_close_session(void) {
+-    schedule_request(REQ_CLOSE_SESSION);
++    atomic_store(&session_wanted, false);
+ }
+ 
+ void zmk_split_esb_timeslot_open_session(void) {
+-    schedule_request(REQ_OPEN_SESSION);
+-    schedule_request(REQ_MAKE_REQUEST);
++    atomic_store(&session_wanted, true);
+ }
+ 
+ void zmk_split_esb_timeslot_init(zmk_split_esb_timeslot_callback_t callback) {
