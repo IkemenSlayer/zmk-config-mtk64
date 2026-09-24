@@ -1,5 +1,7 @@
 # ESB＋BLE HID 継続検証（第2回）
 
+追記: callback終了処理の修正とCテストの結果は [第3回](esb-ble-verification-3.ja.md) を参照してください。
+
 2026-09-24。初回報告の後に、試験ブランチ `right_left_dongle_ble` で検証を継続しました。
 
 **SoftDevice・MPSL timeslot・ESB・BLE HIDを実際に組み込むビルドが、OLEDなし／ありの両方で成立しました。** 前回の「timeslotが無効のままコンパイル成功」から進んでいます。ただしPhase 1の実機入力確認は未完了です。今回のパッチは統合検証用で、実用dual-mode FWではありません。
