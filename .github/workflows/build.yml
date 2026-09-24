@@ -1,14 +1,19 @@
-name: ESB BLE feasibility
+name: ESB BLE feasibility (diagnostic only)
 on:
-  push:
-    branches: [right_left_dongle_ble]
   workflow_dispatch:
+    inputs:
+      matrix:
+        description: Diagnostic build matrix (outputs are not safe dual-mode firmware)
+        type: choice
+        default: build-dual-probe.yaml
+        options:
+          - build-dual-probe.yaml
+          - build-crypto-probe.yaml
 permissions:
   contents: read
 jobs:
   build:
     uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@9ebbeff0a8b69a42f14aec022cdf16c7a107b9e0
     with:
-      build_matrix_path: build-crypto-probe.yaml
+      build_matrix_path: ${{ inputs.matrix }}
       archive_name: probe-firmware-not-for-flashing
-

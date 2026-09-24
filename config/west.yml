@@ -19,21 +19,27 @@ manifest:
       remote: zmkfirmware
       revision: 9ebbeff0a8b69a42f14aec022cdf16c7a107b9e0
       import: app/west.yml
+    - name: zephyr
+      remote: zmkfirmware
+      revision: 10ba6d0cb38bc3d258775d27982f707599320085
+      clone-depth: 1
+      import:
+        name-blocklist: [ci-tools, hal_altera, hal_cypress, hal_infineon, hal_microchip, hal_nxp, hal_openisa, hal_xtensa, hal_st, hal_ti, loramac-node, mcuboot, mcumgr, net-tools, openthread, edtt, trusted-firmware-m]
     - name: zmk-input-processor-xyz
       remote: badjeff
-      revision: main
+      revision: edb44b7261796a11b3aaecc0f75f1da615789b90
     - name: zmk-input-processor-report-rate-limit
       remote: badjeff
-      revision: main
+      revision: b056cb135525933743e2627150fb390f9d4b2461
     - name: zmk-rgbled-widget
       remote: caksoylar
-      revision: main
+      revision: e6b467792a1dabef8cfa5c9fd26bfefc9c16662b
     - name: zmk-dongle-display
       remote: mentako-ya
-      revision: mtk64_rev4
+      revision: 9d2818eb810297866759d84e93c3bb69dda2c3ef
     - name: zmk-feature-split-esb
       remote: badjeff
-      revision: main
+      revision: 314c7cbaf4a74e1add1d6ffc8249de3e29965b8c
     - name: sdk-nrf
       remote: badjeff
       revision: 9b3d2623fdcd9c0fd0284f860beea924568c9826
@@ -45,4 +51,3 @@ manifest:
       path: nrfxlib
   self:
     path: config
-
