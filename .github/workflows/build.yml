@@ -9,5 +9,6 @@ jobs:
   build:
     uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@9ebbeff0a8b69a42f14aec022cdf16c7a107b9e0
     with:
-      build_matrix_path: build-dual-probe.yaml
+      build_matrix_path: build-crypto-probe.yaml
       archive_name: probe-firmware-not-for-flashing
+
