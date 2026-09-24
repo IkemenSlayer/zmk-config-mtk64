@@ -1,0 +1,30 @@
+# Phase 1 only: no mode switching or performance claim.
+include:
+  - board: xiao_ble//zmk
+    shield: mtk64_DONGLE rgbled_adapter
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y
+    artifact-name: baseline_DONGLE
+  - board: xiao_ble//zmk
+    shield: mtk64_DONGLE rgbled_adapter dongle_display
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y
+    artifact-name: baseline_DONGLE_display
+  - board: xiao_ble//zmk
+    shield: mtk64_L rgbled_adapter
+    cmake-args: -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n -DCONFIG_ZMK_BLE=n -DCONFIG_ZMK_SPLIT_BLE=n -DCONFIG_ZMK_SPLIT_ESB=y -DCONFIG_ZMK_SPLIT_ESB_PERIPHERAL_ID=1
+    artifact-name: baseline_L_dongle
+  - board: xiao_ble//zmk
+    shield: mtk64_R rgbled_adapter
+    cmake-args: -DCONFIG_ZMK_SPLIT_ROLE_CENTRAL=n -DCONFIG_ZMK_BLE=n -DCONFIG_ZMK_SPLIT_BLE=n -DCONFIG_ZMK_SPLIT_ESB=y -DCONFIG_ZMK_SPLIT_ESB_PERIPHERAL_ID=2
+    artifact-name: baseline_R_dongle
+  - board: xiao_ble//zmk
+    shield: mtk64_DONGLE rgbled_adapter
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_BLE=y -DCONFIG_ZMK_SPLIT_ESB_USE_TIMESLOT=y -DCONFIG_MPSL_TIMESLOT_SESSION_COUNT=2 -DCONFIG_BT_MAX_PAIRED=1 -DCONFIG_BT_MAX_CONN=1
+    artifact-name: probe_DONGLE_dual
+  - board: xiao_ble//zmk
+    shield: mtk64_DONGLE rgbled_adapter dongle_display
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_BLE=y -DCONFIG_ZMK_SPLIT_ESB_USE_TIMESLOT=y -DCONFIG_MPSL_TIMESLOT_SESSION_COUNT=2 -DCONFIG_BT_MAX_PAIRED=1 -DCONFIG_BT_MAX_CONN=1
+    artifact-name: probe_DONGLE_dual_display

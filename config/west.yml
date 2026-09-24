@@ -17,7 +17,7 @@ manifest:
   projects:
     - name: zmk
       remote: zmkfirmware
-      revision: main
+      revision: 9ebbeff0a8b69a42f14aec022cdf16c7a107b9e0
       import: app/west.yml
     - name: zmk-input-processor-xyz
       remote: badjeff
@@ -36,12 +36,13 @@ manifest:
       revision: main
     - name: sdk-nrf
       remote: badjeff
-      revision: v3.1-branch+zmk-fixes
+      revision: 9b3d2623fdcd9c0fd0284f860beea924568c9826
       path: nrf
     - name: nrfxlib
       remote: nrfconnect
-      revision: v3.1-branch
+      revision: dfadf17305d8f000eda9aa74a5b9ff1c5647a23e
       repo-path: sdk-nrfxlib
       path: nrfxlib
   self:
     path: config
+
