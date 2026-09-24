@@ -9,6 +9,23 @@ on:
 permissions:
   contents: read
 jobs:
+  host-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test actual timeslot C with mocked boundaries
+        run: |
+          git clone https://github.com/badjeff/zmk-feature-split-esb.git /tmp/esb-host
+          git -C /tmp/esb-host checkout 314c7cbaf4a74e1add1d6ffc8249de3e29965b8c
+          git -C /tmp/esb-host apply "$GITHUB_WORKSPACE/patches/esb-timeslot-radio.patch"
+          git -C /tmp/esb-host apply "$GITHUB_WORKSPACE/patches/esb-timeslot-timing.patch"
+          set -o pipefail
+          python3 scripts/test-timeslot-host.py /tmp/esb-host | tee host-tests.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-control-flow-evidence
+          path: host-tests.txt
   probe:
     runs-on: ubuntu-22.04
     container: zmkfirmware/zmk-build-arm:stable

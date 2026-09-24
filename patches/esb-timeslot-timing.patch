@@ -1,0 +1,73 @@
+--- a/src/split/esb/timeslot.c
++++ b/src/split/esb/timeslot.c
+@@ -25,6 +25,15 @@
+ 
+ #define TIMER_EXPIRY_US_EARLY 		 (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_EXT_MARGIN_MARGIN)
+ #define TIMER_EXPIRY_REQ			 (TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US - TIMESLOT_REQ_EARLIEST_MARGIN)
++
++/* Both compare points must occur inside the slot, with extension first. */
++BUILD_ASSERT(TIMESLOT_REQ_EARLIEST_MARGIN > 0, "timeslot cleanup margin must be positive");
++BUILD_ASSERT(TIMESLOT_EXT_MARGIN_MARGIN > TIMESLOT_REQ_EARLIEST_MARGIN,
++             "timeslot extension must precede the next request");
++BUILD_ASSERT(TIMESLOT_LENGTH_US > MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US &&
++             TIMESLOT_EXT_MARGIN_MARGIN <
++                 TIMESLOT_LENGTH_US - MPSL_TIMESLOT_EXTENSION_MARGIN_MIN_US,
++             "timeslot length must exceed extension and cleanup margins");
+ 
+ #define MPSL_THREAD_PRIO             CONFIG_MPSL_THREAD_COOP_PRIO
+ #define STACKSIZE                    CONFIG_MAIN_STACK_SIZE
+@@ -88,18 +97,36 @@
+     }
+ }
+ 
++/* Only called from START/TIMER0/EXTEND_SUCCEEDED while MPSL grants access.
++ * Closing a session does not end an already running slot for the application.
++ */
++static void end_current_timeslot(void) {
++    nrf_timer_int_disable(NRF_TIMER0, NRF_TIMER_INT_COMPARE0_MASK |
++                                    NRF_TIMER_INT_COMPARE1_MASK);
++    nrf_timer_event_clear(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE0);
++    nrf_timer_event_clear(NRF_TIMER0, NRF_TIMER_EVENT_COMPARE1);
++    set_timeslot_active_status(false);
++    signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_END;
++}
++
+ static mpsl_timeslot_signal_return_param_t *mpsl_timeslot_callback(mpsl_timeslot_session_id_t session_id, 
+                                                                   uint32_t signal_type) {
+     (void) session_id; // unused parameter
+     static bool timeslot_extension_failed;
+     // NRF_P0->OUTSET = BIT(28);
+     mpsl_timeslot_signal_return_param_t *p_ret_val = NULL;
++    /* Never reuse a previous EXTEND/REQUEST when no compare event is set. */
++    signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+     switch (signal_type) {
+         case MPSL_TIMESLOT_SIGNAL_START:
+             LOG_DBG("TS start");
+             signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
+             p_ret_val = &signal_callback_return_param;
+ 
++            if (!m_sess_open) {
++                end_current_timeslot();
++                break;
++            }
+             timeslot_extension_failed = false;
+ 
+             // Reset the radio to make sure no configuration remains from BLE
+@@ -122,7 +149,7 @@
+         case MPSL_TIMESLOT_SIGNAL_TIMER0:
+             // LOG_DBG("Signal TIMER0");
+             if (!m_sess_open) {
+-                signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
++                end_current_timeslot();
+                 p_ret_val = &signal_callback_return_param;
+                 break;
+             }
+@@ -151,7 +178,7 @@
+         case MPSL_TIMESLOT_SIGNAL_EXTEND_SUCCEEDED:
+             // LOG_DBG("Extend Succeeded");
+             if (!m_sess_open) {
+-                signal_callback_return_param.callback_action = MPSL_TIMESLOT_SIGNAL_ACTION_NONE;
++                end_current_timeslot();
+                 p_ret_val = &signal_callback_return_param;
+                 break;
+             }
