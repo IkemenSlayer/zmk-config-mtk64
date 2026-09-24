@@ -38,7 +38,7 @@ jobs:
         run: |
           west update --fetch-opt=--filter=tree:0
           west zephyr-export
-          west manifest --freeze > frozen-west.yml
+          west list -f '{name} {revision} {path}' > resolved-projects.txt
       - name: Apply pinned experimental patches
         env:
           RADIO_PATCH: ${{ inputs.radio_patch }}
@@ -78,7 +78,7 @@ jobs:
           name: radio-evidence-${{ matrix.display }}
           include-hidden-files: true
           path: |
-            /tmp/dual-work/frozen-west.yml
+            /tmp/dual-work/resolved-projects.txt
             /tmp/dual-work/build/zephyr/.config
             /tmp/dual-work/build/zephyr/zephyr.dts
             /tmp/dual-work/build/zephyr/zmk.map
